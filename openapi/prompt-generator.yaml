@@ -1,0 +1,681 @@
+openapi: 3.0.3
+info:
+  title: Prompt Generator API
+  version: 1.0.0
+  description: REST API for managing prompt templates and generating educational prompts.
+servers:
+  - url: https://api.prompt-generator.local
+    description: Production server
+  - url: http://localhost:4000
+    description: Local development server
+security:
+  - bearerAuth: []
+
+paths:
+  /api/auth/login:
+    post:
+      summary: Authenticate user and obtain JWT tokens
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/catalog/roles:
+    get:
+      summary: List available roles
+      tags: [Catalog]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CatalogItem'
+  /api/catalog/tasks:
+    get:
+      summary: List available tasks
+      tags: [Catalog]
+      parameters:
+        - in: query
+          name: subject
+          schema:
+            type: string
+          description: Filter by subject (e.g. HistoryBG)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskItem'
+  /api/catalog/formats:
+    get:
+      summary: List available output formats
+      tags: [Catalog]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FormatItem'
+  /api/catalog/dimensions:
+    get:
+      summary: List taxonomy dimensions
+      tags: [Catalog]
+      parameters:
+        - in: query
+          name: type
+          schema:
+            type: string
+          description: Filter by dimension type (e.g. bloom, grade)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DimensionItem'
+
+  /api/templates:
+    get:
+      summary: List templates
+      tags: [Templates]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, in_review, approved, deprecated]
+        - in: query
+          name: roleId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: taskId
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TemplateSummary'
+    post:
+      summary: Create a template (admin only)
+      tags: [Templates]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateCreateRequest'
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /api/templates/{id}:
+    get:
+      summary: Get template detail
+      tags: [Templates]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Template detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      summary: Update template (admin)
+      tags: [Templates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateUpdateRequest'
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/templates/{id}/status:
+    post:
+      summary: Transition template status (review/approve/deprecate)
+      tags: [Templates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [draft, in_review, approved, deprecated]
+                comment:
+                  type: string
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/generate:
+    post:
+      summary: Generate prompt output
+      tags: [Generator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [templateId, values]
+              properties:
+                templateId:
+                  type: string
+                  format: uuid
+                values:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Generated prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templateId:
+                    type: string
+                    format: uuid
+                  version:
+                    type: integer
+                  output:
+                    type: string
+                  placeholders:
+                    type: object
+                    additionalProperties: true
+                  metadata:
+                    type: object
+                    properties:
+                      generatedAt:
+                        type: string
+                        format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/presets:
+    get:
+      summary: List presets
+      tags: [Presets]
+      parameters:
+        - in: query
+          name: templateId
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Preset list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PresetSummary'
+    post:
+      summary: Create preset (admin)
+      tags: [Presets]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetCreateRequest'
+      responses:
+        '201':
+          description: Preset created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresetSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+  /api/user-configs:
+    get:
+      summary: List user configurations (favorites/history)
+      tags: [UserConfigs]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Config list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserConfig'
+    post:
+      summary: Save user configuration
+      tags: [UserConfigs]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserConfigCreateRequest'
+      responses:
+        '201':
+          description: Configuration saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/audit:
+    get:
+      summary: List audit logs (admin only)
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: entity
+          schema:
+            type: string
+        - in: query
+          name: entityId
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLog'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TemplateId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    UnauthorizedError:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ForbiddenError:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    CatalogItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        isActive:
+          type: boolean
+    TaskItem:
+      allOf:
+        - $ref: '#/components/schemas/CatalogItem'
+        - type: object
+          properties:
+            subject:
+              type: string
+    FormatItem:
+      allOf:
+        - $ref: '#/components/schemas/CatalogItem'
+        - type: object
+          properties:
+            mime:
+              type: string
+            extension:
+              type: string
+    DimensionItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        choices:
+          type: array
+          items:
+            type: string
+        validators:
+          type: object
+    TemplateSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [draft, in_review, approved, deprecated]
+        version:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+    TemplateCreateRequest:
+      type: object
+      required: [name, contentMd, placeholderDefinitions]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        contentMd:
+          type: string
+        relations:
+          type: object
+          properties:
+            roleIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            taskIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            formatIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+        placeholderDefinitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceholderDefinition'
+    TemplateUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/TemplateCreateRequest'
+      properties:
+        status:
+          type: string
+          enum: [draft, in_review, approved, deprecated]
+        changelog:
+          type: string
+    TemplateDetail:
+      allOf:
+        - $ref: '#/components/schemas/TemplateSummary'
+        - type: object
+          properties:
+            contentMd:
+              type: string
+            placeholderDefinitions:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaceholderDefinition'
+            relations:
+              type: object
+              properties:
+                roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CatalogItem'
+                tasks:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TaskItem'
+                formats:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/FormatItem'
+    PlaceholderDefinition:
+      type: object
+      required: [key, type, label]
+      properties:
+        key:
+          type: string
+        type:
+          type: string
+          enum: [string, text, markdown, enum, multiselect, tags, url, url_list, number, boolean]
+        label:
+          type: string
+        description:
+          type: string
+        isRequired:
+          type: boolean
+        defaultValue:
+          nullable: true
+        options:
+          type: array
+          items:
+            type: string
+        validators:
+          type: object
+    PresetSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        templateId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        meta:
+          type: object
+    PresetCreateRequest:
+      type: object
+      required: [templateId, name, meta]
+      properties:
+        templateId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        meta:
+          type: object
+    UserConfig:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        templateId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        values:
+          type: object
+        isFavorite:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    UserConfigCreateRequest:
+      type: object
+      required: [templateId, values]
+      properties:
+        templateId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        values:
+          type: object
+        isFavorite:
+          type: boolean
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        entity:
+          type: string
+        entityId:
+          type: string
+          format: uuid
+        action:
+          type: string
+        before:
+          type: object
+        after:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
